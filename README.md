@@ -21,7 +21,7 @@ the `urlfilter-edge` branch.
 
 | Commit | Description |
 |---|---|
-| *(none yet — Priority 4 and 5 pending)* | |
+| *(no code changes — see note below)* | |
 
 The fork module path remains `github.com/AdguardTeam/urlfilter` (unchanged from
 upstream) so it integrates via a `go.mod replace` directive in the host repo:
@@ -32,3 +32,17 @@ replace github.com/AdguardTeam/urlfilter => ../urlfilter
 
 Builds must be run from the AdGuardHome-Edge repo root with this fork checked
 out at `../urlfilter`.
+
+## Investigated and shelved
+
+A `noIndex` regex-scan optimization (Bloom filter gate + merged-regex alternation)
+was evaluated on 2026-05-24 and **shelved** — it is not warranted for the AdGuard DNS
+filtering workload.
+
+Measured against the real AdGuard SDN (DNS) filter, only **5 rules** land in
+`NetworkEngine.noIndex`, all clean 5-char literal shortcuts with **zero regex**. The
+per-request `noIndex` scan is already negligible and is fully short-circuited by the
+host engine's copy-on-write match cache. A Bloom filter cannot gate the only expensive
+case (empty-shortcut regex rules, which always reach `matchPattern` by design), and
+those rules are non-host-level anyway, so they never reach the DNS engine. Full analysis
+is recorded in the AdGuardHome-Edge `PERF-BACKLOG.md`, Section 10.
