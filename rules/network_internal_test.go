@@ -234,17 +234,34 @@ func TestFindRegexShortcut(t *testing.T) {
 		input:        "/example/",
 		wantShortcut: "example",
 	}, {
+		// AST extracts the full mandatory prefix literal (legacy gave "/example").
 		input:        "/^http:\\/\\/example/",
-		wantShortcut: "/example",
+		wantShortcut: "http://example",
 	}, {
+		// AST keeps the leading "." of ".example" (legacy dropped it).
 		input:        "/^http:\\/\\/[a-z]+\\.example/",
-		wantShortcut: "example",
+		wantShortcut: ".example",
 	}, {
 		input:        "//",
 		wantShortcut: "",
 	}, {
+		// Negative lookahead is unsupported by regexp/syntax → parse error → "".
 		input:        "/^http:\\/\\/(?!test.)example.org/",
 		wantShortcut: "",
+	}, {
+		// The '?' no longer forces an empty shortcut: the mandatory literal
+		// after the optional group is extracted.
+		input:        "/^ad[0-9]?-tracker\\.com$/",
+		wantShortcut: "-tracker.com",
+	}, {
+		// Alternation guarantees no single literal.
+		input:        "/(?:ads|track)\\.evil/",
+		wantShortcut: ".evil",
+	}, {
+		// A '+' repetition's body is mandatory (appears at least once); at 7
+		// chars "badword" beats the 4-char ".net".
+		input:        "/(badword)+\\.net/",
+		wantShortcut: "badword",
 	}}
 
 	for _, tc := range testCases {

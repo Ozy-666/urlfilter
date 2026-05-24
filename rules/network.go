@@ -5,6 +5,7 @@ import (
 	"math/bits"
 	"net/netip"
 	"regexp"
+	"regexp/syntax"
 	"slices"
 	"strings"
 	"sync"
@@ -1027,12 +1028,128 @@ func findShortcut(pattern string) (shortcut string) {
 	return shortcut
 }
 
-// findRegexpShortcut searches for a shortcut inside of a regexp pattern.  A
-// shortcut in this case is a longest string with no regexp special characters.
-// It also discards complicated regexps right away.
-//
-// TODO(a.garipov):  This requires a deep refactoring and optimization.
+// useASTShortcut selects the regexp shortcut extractor.  Production always uses
+// the AST extractor; [SetASTShortcutForTesting] flips it only for the
+// equivalence harness.
+var useASTShortcut = true
+
+// SetASTShortcutForTesting toggles the AST regexp shortcut extractor and returns
+// the previous setting.  It exists solely for the equivalence harness that A/B
+// compares the AST and legacy extractors, and must not be used in production.
+func SetASTShortcutForTesting(on bool) (prev bool) {
+	prev = useASTShortcut
+	useASTShortcut = on
+
+	return prev
+}
+
+// findRegexpShortcut extracts the shortcut for a regexp rule pattern, which
+// includes the surrounding slashes.  It dispatches to the AST-based extractor by
+// default; the legacy extractor is retained for the equivalence harness.
 func findRegexpShortcut(pattern string) (shortcut string) {
+	if useASTShortcut {
+		return findRegexpShortcutAST(pattern)
+	}
+
+	return findRegexpShortcutLegacy(pattern)
+}
+
+// findRegexpShortcutAST returns the longest literal substring guaranteed to
+// appear in every string matched by the regexp pattern (which includes the
+// surrounding slashes).  It parses the pattern into an AST and walks it
+// conservatively: optional, repeated-zero, alternated, and otherwise
+// non-mandatory subexpressions contribute nothing, so the result can only ever
+// under-estimate the required literal — it never returns a literal that is not
+// guaranteed, which would cause the shortcut index to drop real matches.
+//
+// On any parse error (including pathological or malformed input, which
+// regexp/syntax rejects with bounded work) it returns the empty string, leaving
+// the rule unindexed but correct.
+func findRegexpShortcutAST(pattern string) (shortcut string) {
+	if len(pattern) < 2 {
+		return ""
+	}
+
+	re, err := syntax.Parse(pattern[1:len(pattern)-1], syntax.Perl)
+	if err != nil {
+		return ""
+	}
+
+	var best string
+	requiredLiteral(re, &best)
+
+	return best
+}
+
+// requiredLiteral walks re, updating best with the longest mandatory contiguous
+// literal found.  It returns (lit, exact): exact is true only when the entire
+// subexpression matches exactly the fixed mandatory string lit, so that a parent
+// [syntax.OpConcat] may safely join it with adjacent literals.
+func requiredLiteral(re *syntax.Regexp, best *string) (lit string, exact bool) {
+	switch re.Op {
+	case syntax.OpLiteral:
+		lit = string(re.Rune)
+		updateLongest(best, lit)
+
+		return lit, true
+	case syntax.OpCapture:
+		// A capturing or non-capturing group is transparent for matching.
+		return requiredLiteral(re.Sub[0], best)
+	case syntax.OpConcat:
+		var run strings.Builder
+		allExact := true
+		for _, sub := range re.Sub {
+			cs, cexact := requiredLiteral(sub, best)
+			if cexact {
+				run.WriteString(cs)
+
+				continue
+			}
+
+			// A non-fixed element breaks the contiguous run.
+			updateLongest(best, run.String())
+			run.Reset()
+			allExact = false
+		}
+
+		updateLongest(best, run.String())
+		if allExact {
+			return run.String(), true
+		}
+
+		return "", false
+	case syntax.OpPlus:
+		// The child appears at least once, so its required literal is
+		// mandatory; register it, but the repetition itself is not a fixed
+		// joinable literal.
+		requiredLiteral(re.Sub[0], best)
+
+		return "", false
+	case syntax.OpRepeat:
+		if re.Min >= 1 {
+			requiredLiteral(re.Sub[0], best)
+		}
+
+		return "", false
+	default:
+		// OpStar and OpQuest are optional; OpAlternate, OpCharClass,
+		// OpAnyChar(NotNL), anchors, boundaries, OpEmptyMatch, and OpNoMatch
+		// guarantee no specific literal.
+		return "", false
+	}
+}
+
+// updateLongest sets *best to s when s is longer than the current value.
+func updateLongest(best *string, s string) {
+	if len(s) > len(*best) {
+		*best = s
+	}
+}
+
+// findRegexpShortcutLegacy is the original shortcut extractor, kept for the
+// equivalence harness.  It bails on any '?' and returns the longest run with no
+// regexp special characters.
+func findRegexpShortcutLegacy(pattern string) (shortcut string) {
 	// Strip backslashes.
 	pattern = pattern[1 : len(pattern)-1]
 
@@ -1040,8 +1157,6 @@ func findRegexpShortcut(pattern string) (shortcut string) {
 		// Do not mess with complex expressions which use lookahead.
 		//
 		// See https://github.com/AdguardTeam/AdguardBrowserExtension/issues/978.
-		//
-		// TODO(a.garipov):  Reinspect.
 		return ""
 	}
 
