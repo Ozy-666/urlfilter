@@ -21,7 +21,7 @@ the `urlfilter-edge` branch.
 
 | Commit | Description |
 |---|---|
-| *(no code changes — see note below)* | |
+| `1335417` | AST-based required-literal shortcut extraction for regexp rules (closes the host-level regexp `noIndex` O(N) cache-miss vector) |
 
 The fork module path remains `github.com/AdguardTeam/urlfilter` (unchanged from
 upstream) so it integrates via a `go.mod replace` directive in the host repo:
@@ -33,16 +33,34 @@ replace github.com/AdguardTeam/urlfilter => ../urlfilter
 Builds must be run from the AdGuardHome-Edge repo root with this fork checked
 out at `../urlfilter`.
 
-## Investigated and shelved
+## AST shortcut extraction (regexp rules)
 
-A `noIndex` regex-scan optimization (Bloom filter gate + merged-regex alternation)
-was evaluated on 2026-05-24 and **shelved** — it is not warranted for the AdGuard DNS
-filtering workload.
+`findRegexpShortcut` parses each regexp rule with `regexp/syntax` and extracts the
+longest **guaranteed-required contiguous literal**, replacing the legacy extractor
+that bailed on any `?` and returned the longest special-char-free run. This moves
+host-level regexp rules such as `/^ad[0-9]?-tracker\.com$/` out of the unindexed
+`noIndex` bucket and into the shortcut index, so a unique-subdomain flood no longer
+forces `matchPattern` on every cache miss (O(N) → O(1)).
 
-Measured against the real AdGuard SDN (DNS) filter, only **5 rules** land in
-`NetworkEngine.noIndex`, all clean 5-char literal shortcuts with **zero regex**. The
-per-request `noIndex` scan is already negligible and is fully short-circuited by the
-host engine's copy-on-write match cache. A Bloom filter cannot gate the only expensive
-case (empty-shortcut regex rules, which always reach `matchPattern` by design), and
-those rules are non-host-level anyway, so they never reach the DNS engine. Full analysis
-is recorded in the AdGuardHome-Edge `PERF-BACKLOG.md`, Section 10.
+The walk is deliberately conservative — optional, alternated, repeated-zero and
+otherwise non-mandatory subexpressions contribute nothing — so it can only ever
+*under*-extract; it never claims a literal that is not guaranteed, which would cause
+the shortcut index to drop real matches. The legacy extractor is retained behind
+`SetASTShortcutForTesting` for the equivalence harness.
+
+**Why not the alternation gate?** A merged-regexp alternation gate was prototyped and
+**rejected by benchmark** — it was ~14× *slower* than the linear scan, because
+anchored regexps reject a non-matching host in O(1) individually while the union
+automaton loses that per-branch early-exit. Empty-literal regexps cannot be prefiltered
+by any literal structure, so AST indexing (which removes the literal-bearing ones from
+the scan entirely) is the correct defense. Full analysis: AdGuardHome-Edge
+`PERF-BACKLOG.md` §10.
+
+### Bluehat verification (2026-05-25)
+- **Equivalence harness:** AST vs legacy engine over the real SDN+base lists +
+  `requests.json` + procedural blocklist hosts — **0 divergences / 39,983 hosts**.
+- **Fuzz:** 130k executions, 0 divergences.
+- **Pathological/malformed regexps:** no panic, bounded work, ~29 allocs (load-time
+  only; `regexp/syntax` rejects oversized input).
+- **Flood benchmark** (N `?`-regexps, random host): **111 µs → 449 ns at N=1000
+  (248×), flat in N, 0 query-path allocs.**
