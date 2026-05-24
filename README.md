@@ -4,7 +4,7 @@ This is a performance-optimized fork of the original [AdguardTeam/urlfilter](htt
 
 ## Purpose
 
-Maintained specifically for the `AdGuardHome-Edge` project. All changes target
+Maintained specifically for the [AdGuardHome-Edge](https://github.com/Ozy-666/AdGuardHome-Edge) project. All changes target
 the DNS filtering hot path and are benchmarked on the production host before
 deployment.
 
