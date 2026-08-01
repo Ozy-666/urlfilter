@@ -1,3 +1,7 @@
+// This file is part of urlfilter, Copyright (c) AdGuard Software Ltd. and contributors.
+// Modifications Copyright (c) 2026 Ozy-666 (https://dnsdoh.art)
+// SPDX-License-Identifier: GPL-3.0-only
+
 package rules
 
 import (

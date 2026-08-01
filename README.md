@@ -2,6 +2,10 @@
 
 This is a performance-optimized fork of the original [AdguardTeam/urlfilter](https://github.com/AdguardTeam/urlfilter).
 
+**This is a modified version of AdguardTeam/urlfilter.** Modified by Ozy-666
+(<https://dnsdoh.art>) since May 2026; the base upstream release and every change
+made on top of it are listed under [Versioning](#versioning) below.
+
 ## Purpose
 
 Maintained specifically for the [AdGuardHome-edge](https://github.com/Ozy-666/AdGuardHome-edge-spec) project. All changes target
@@ -64,3 +68,14 @@ the scan entirely) is the correct defense. Full analysis: AdGuardHome-Edge
   only; `regexp/syntax` rejects oversized input).
 - **Flood benchmark** (N `?`-regexps, random host): **111 µs → 449 ns at N=1000
   (248×), flat in N, 0 query-path allocs.**
+
+## License
+
+This fork inherits the license of the upstream project: **GNU General Public
+License v3.0** (`GPL-3.0-only`) — see [`LICENSE`](LICENSE). Upstream ships the
+GPLv3 text with no "or any later version" statement, so that option is not
+offered here either.
+
+urlfilter is © AdGuard Software Ltd. and contributors.
+Modifications in this fork are © 2026 Ozy-666 (<https://dnsdoh.art>), released
+under the same GPL-3.0-only terms.
