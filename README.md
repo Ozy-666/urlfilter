@@ -1,5 +1,28 @@
 # urlfilter (Edge Fork for AdGuardHome)
 
+> [!IMPORTANT]
+> **Archived in October 2026.** This repository is no longer maintained and the code no longer runs anywhere. It stays online, read-only, so the commits, benchmarks and notes can still be linked.
+
+## Where dnsdoh.art went
+
+dnsdoh.art used to run AdGuardHome-edge -> Unbound -> dnscrypt-proxy, with patched forks of AdGuardHome, dnsproxy, urlfilter and dnscrypt-proxy. Each upstream release meant rebasing and re-benchmarking all four forks. Between late September and early October 2026 the stack was replaced by two upstream projects with no patches applied:
+
+```
+nginx      443 DoH + DoH3
+  └─> dnsdist  53 plain · 853 DoT + DoQ · blocklists
+        └─> Unbound  127.0.0.1 · DNSSEC validation
+              └─> DoT  Cloudflare 1.1.1.1 · Quad9 9.9.9.10
+```
+
+- **2026-09-27** - dnsdist took over ports 53 and 853 from AdGuardHome-edge.
+- **2026-10-04** - Unbound began forwarding over DoT itself. AdGuardHome-edge, dnsproxy and dnscrypt-proxy were removed from the server.
+
+This fork matched blocklist rules inside AdGuardHome-edge. Blocklists are now applied in dnsdist.
+
+Current versions and the resolver build are at [Ozy-666/unbound-edge](https://github.com/Ozy-666/unbound-edge), and the service at [dnsdoh.art](https://dnsdoh.art).
+
+---
+
 This is a performance-optimized fork of the original [AdguardTeam/urlfilter](https://github.com/AdguardTeam/urlfilter).
 
 **This is a modified version of AdguardTeam/urlfilter.** Modified by Ozy-666
